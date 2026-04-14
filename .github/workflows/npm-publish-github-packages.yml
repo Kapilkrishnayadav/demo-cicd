@@ -20,9 +20,8 @@ jobs:
       - name: Create tar package
         run: |
           tar -czf app.tar.gz \
-            --exclude='node_modules' \
-            --exclude='.git' \
-            --warning=no-file-changed \
+            --exclude=node_modules \
+            --exclude=.git \
             .
 
       # 3. Upload to EC2
@@ -47,7 +46,7 @@ jobs:
 
             cd /home/ubuntu
 
-            # Backup old version (safer than delete)
+            # Backup old version (safe deploy)
             if [ -d "demo-cicd" ]; then
               mv demo-cicd demo-cicd_backup_$(date +%s)
             fi
@@ -61,13 +60,13 @@ jobs:
 
             cd demo-cicd
 
-            # Install dependencies (faster & reliable)
+            # Install dependencies
             npm ci
 
-            # Restart app (zero-downtime if exists)
+            # Restart app (zero downtime)
             pm2 reload demo-cicd || pm2 start index.js --name demo-cicd
 
-            # Save PM2 process
+            # Save PM2 process list
             pm2 save
 
             echo "Deployment successful 🚀"
