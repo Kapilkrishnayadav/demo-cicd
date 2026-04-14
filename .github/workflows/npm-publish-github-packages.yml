@@ -61,7 +61,7 @@ jobs:
             npm ci
 
             # Restart app (zero downtime)
-            pm2 reload demo-cicd || pm2 start index.js --name demo-cicd
+            pm2 reload demo-cicd | pm2 start index.js --name demo-cicd
 
             # Save PM2 process
             pm2 save
