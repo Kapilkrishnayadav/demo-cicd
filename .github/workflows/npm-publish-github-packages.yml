@@ -51,13 +51,14 @@ jobs:
 
             cd demo-cicd
 
-            # Install dependencies
+            # Install production dependencies only
             npm ci --omit=dev
 
-            # Reload if running, otherwise start fresh
+            # Reload if already running, otherwise start fresh on port 8000
             pm2 reload demo-cicd --update-env || pm2 start index.js --name demo-cicd
 
             # Save PM2 process list
             pm2 save
 
             echo "Deployment successful 🚀"
+            echo "App running at http://$(curl -s ifconfig.me):8000"
