@@ -1,4 +1,4 @@
-name: Deploy Express App to EC2
+name: Deploy via Upload
 
 on:
   push:
@@ -10,36 +10,46 @@ jobs:
 
     steps:
       # 1. Checkout code
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      # 2. Setup Node.js
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      # 2. Create zip
+      - name: Zip project
+        run: |
+          zip -r app.zip . -x "node_modules/*" ".git/*"
+
+      # 3. Upload to EC2
+      - name: Copy to EC2
+        uses: appleboy/scp-action@v0.1.7
         with:
-          node-version: "18"
+          host: ${{ secrets.EC2_HOST }}
+          username: ubuntu
+          key: ${{ secrets.EC2_SSH_KEY }}
+          source: "app.zip"
+          target: "/home/ubuntu"
 
-      # 3. Install dependencies
-      - name: Install dependencies
-        run: npm install
-
-    
-
-      # 5. Deploy to EC2
-      - name: Deploy via SSH
+      # 4. SSH and deploy
+      - name: Deploy on EC2
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ubuntu
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
-            cd /home/ubuntu/demo-cicd
+            cd /home/ubuntu
 
-            # Pull latest code
-            git pull origin main
+            # Remove old app
+            rm -rf demo-cicd
+
+            # Unzip new app
+            unzip app.zip -d demo-cicd
+            rm app.zip
+
+            cd demo-cicd
 
             # Install dependencies
             npm install
 
-            # Restart app using PM2
-            pm2 restart app || pm2 start index.js --name app
+            # Restart app
+            pm2 restart demo-cicd || pm2 start index.js --name demo-cicd
+
+            pm2 save
