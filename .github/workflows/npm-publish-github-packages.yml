@@ -1,4 +1,4 @@
-name: Deploy via Upload
+name: Deploy via Upload (TAR)
 
 on:
   push:
@@ -12,10 +12,12 @@ jobs:
       # 1. Checkout code
       - uses: actions/checkout@v4
 
-      # 2. Create zip
-      - name: Zip project
+      # 2. Create tar file
+      - name: Create tar package
         run: |
-          zip -r app.zip . -x "node_modules/*" ".git/*"
+          tar --exclude='node_modules' \
+              --exclude='.git' \
+              -czf app.tar.gz .
 
       # 3. Upload to EC2
       - name: Copy to EC2
@@ -24,10 +26,10 @@ jobs:
           host: ${{ secrets.EC2_HOST }}
           username: ubuntu
           key: ${{ secrets.EC2_SSH_KEY }}
-          source: "app.zip"
+          source: "app.tar.gz"
           target: "/home/ubuntu"
 
-      # 4. SSH and deploy
+      # 4. Deploy on EC2
       - name: Deploy on EC2
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -40,14 +42,15 @@ jobs:
             # Remove old app
             rm -rf demo-cicd
 
-            # Unzip new app
-            unzip app.zip -d demo-cicd
-            rm app.zip
+            # Extract new app
+            mkdir demo-cicd
+            tar -xzf app.tar.gz -C demo-cicd
+            rm app.tar.gz
 
             cd demo-cicd
 
             # Install dependencies
-            npm install
+            npm ci
 
             # Restart app
             pm2 restart demo-cicd || pm2 start index.js --name demo-cicd
