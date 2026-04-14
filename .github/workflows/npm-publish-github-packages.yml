@@ -1,4 +1,4 @@
-name: Deploy via Upload (TAR)
+name: Deploy to EC2 (Stable)
 
 on:
   push:
@@ -16,16 +16,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2. Create tar package (FIXED)
-      - name: Create tar package
+      # 2. Create tar archive (BEST METHOD)
+      - name: Create deployment package
         run: |
-          tar -czf app.tar.gz \
-            --exclude=node_modules \
-            --exclude=.git \
-            .
+          git archive --format=tar.gz -o app.tar.gz HEAD
 
       # 3. Upload to EC2
-      - name: Copy to EC2
+      - name: Copy package to EC2
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.EC2_HOST }}
@@ -35,7 +32,7 @@ jobs:
           target: "/home/ubuntu"
 
       # 4. Deploy on EC2
-      - name: Deploy on EC2
+      - name: Deploy application
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.EC2_HOST }}
@@ -51,7 +48,7 @@ jobs:
               mv demo-cicd demo-cicd_backup_$(date +%s)
             fi
 
-            # Create new app directory
+            # Create new directory
             mkdir demo-cicd
 
             # Extract new code
@@ -66,7 +63,7 @@ jobs:
             # Restart app (zero downtime)
             pm2 reload demo-cicd || pm2 start index.js --name demo-cicd
 
-            # Save PM2 process list
+            # Save PM2 process
             pm2 save
 
             echo "Deployment successful 🚀"
