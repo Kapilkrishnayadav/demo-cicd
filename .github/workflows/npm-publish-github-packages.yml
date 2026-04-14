@@ -1,64 +1,76 @@
-name: Deploy to EC2 (Stable)
+name: Deploy Express App to EC2
+
 on:
   push:
-    branches: [ "main" ]
+    branches: [main]
+  workflow_dispatch:
+
 jobs:
   deploy:
+    name: Build & Deploy
     runs-on: ubuntu-latest
-    env:
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
     steps:
-      # 1. Checkout code
-      - name: Checkout repository
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      # 2. Create tar archive
       - name: Create deployment package
         run: |
-          git archive --format=tar.gz -o app.tar.gz HEAD
+          # Create a tarball of the necessary files only
+          # Excluding node_modules, .git, and .github
+          tar -czf deploy.tar.gz \
+            --exclude='node_modules' \
+            --exclude='.git' \
+            --exclude='.github' \
+            .
 
-      # 3. Upload to EC2
-      - name: Copy package to EC2
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ubuntu
-          key: ${{ secrets.EC2_SSH_KEY }}
-          source: "app.tar.gz"
-          target: "/home/ubuntu"
+      - name: Deploy to EC2 via SSH
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USERNAME: ${{ secrets.EC2_USERNAME }}
+          SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_KEY }}
+        run: |
+          echo "$SSH_PRIVATE_KEY" > private_key.pem
+          chmod 600 private_key.pem
 
-      # 4. Deploy on EC2
-      - name: Deploy application
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ubuntu
-          key: ${{ secrets.EC2_SSH_KEY }}
-          script: |
-            echo "Connected to EC2"
-            cd /home/ubuntu
+          # Upload the tarball
+          scp -i private_key.pem -o StrictHostKeyChecking=no \
+            deploy.tar.gz ${EC2_USERNAME}@${EC2_HOST}:/tmp/
 
-            # Backup old version (keep last 3 only)
-            if [ -d "demo-cicd" ]; then
-              mv demo-cicd demo-cicd_backup_$(date +%s)
+          # Remote Execution
+          ssh -i private_key.pem -o StrictHostKeyChecking=no \
+            ${EC2_USERNAME}@${EC2_HOST} << 'EOF'
+            
+            # 1. Setup Directory
+            sudo mkdir -p /var/www/express-app
+            sudo chown -R $USER:$USER /var/www/express-app
+            cd /var/www/express-app
+
+            # 2. Extract Files
+            tar -xzf /tmp/deploy.tar.gz -C /var/www/express-app
+            rm /tmp/deploy.tar.gz
+
+            # 3. Install Dependencies
+            npm install --production
+
+            # 4. Restart Application
+            if pm2 describe express-app > /dev/null 2>&1; then
+              echo "Reloading App..."
+              pm2 reload express-app --update-env
+            else
+              echo "Starting App..."
+              pm2 start ecosystem.config.cjs
             fi
-            ls -dt demo-cicd_backup_* 2>/dev/null | tail -n +4 | xargs rm -rf
-
-            # Create new directory and extract code
-            mkdir demo-cicd
-            tar -xzf app.tar.gz -C demo-cicd
-            rm app.tar.gz
-
-            cd demo-cicd
-
-            # Install production dependencies only
-            npm ci --omit=dev
-
-            # Reload if already running, otherwise start fresh on port 8000
-            pm2 reload demo-cicd --update-env || pm2 start index.js --name demo-cicd
-
-            # Save PM2 process list
+            
             pm2 save
+          EOF
 
-            echo "Deployment successful 🚀"
-            echo "App running at http://$(curl -s ifconfig.me):8000"
+          rm private_key.pem
+
+      - name: Health Check
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+        run: |
+          echo "Checking app status..."
+          sleep 5
+          curl -s --retry 3 --retry-delay 5 http://${EC2_HOST} | grep -q "" && echo "✅ App is UP" || (echo "❌ App is DOWN" && exit 1)
