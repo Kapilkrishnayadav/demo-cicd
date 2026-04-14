@@ -1,0 +1,45 @@
+name: Deploy Express App to EC2
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Checkout code
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. Setup Node.js
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+
+      # 3. Install dependencies
+      - name: Install dependencies
+        run: npm install
+
+    
+
+      # 5. Deploy to EC2
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ubuntu
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            cd /home/ubuntu/app
+
+            # Pull latest code
+            git pull origin main
+
+            # Install dependencies
+            npm install
+
+            # Restart app using PM2
+            pm2 restart app || pm2 start index.js --name app
