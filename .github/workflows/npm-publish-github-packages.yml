@@ -1,75 +1,63 @@
 name: Deploy to EC2 (Stable)
-
 on:
-push:
-branches: [ "main" ]
-
+  push:
+    branches: [ "main" ]
 jobs:
-deploy:
-runs-on: ubuntu-latest
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+    steps:
+      # 1. Checkout code
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-```
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      # 2. Create tar archive
+      - name: Create deployment package
+        run: |
+          git archive --format=tar.gz -o app.tar.gz HEAD
 
-steps:
-  # 1. Checkout code
-  - name: Checkout repository
-    uses: actions/checkout@v4
+      # 3. Upload to EC2
+      - name: Copy package to EC2
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ubuntu
+          key: ${{ secrets.EC2_SSH_KEY }}
+          source: "app.tar.gz"
+          target: "/home/ubuntu"
 
-  # 2. Create tar archive
-  - name: Create deployment package
-    run: |
-      git archive --format=tar.gz -o app.tar.gz HEAD
+      # 4. Deploy on EC2
+      - name: Deploy application
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ubuntu
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            echo "Connected to EC2"
+            cd /home/ubuntu
 
-  # 3. Upload to EC2
-  - name: Copy package to EC2
-    uses: appleboy/scp-action@v0.1.7
-    with:
-      host: ${{ secrets.EC2_HOST }}
-      username: ubuntu
-      key: ${{ secrets.EC2_SSH_KEY }}
-      source: "app.tar.gz"
-      target: "/home/ubuntu"
+            # Backup old version (keep last 3 only)
+            if [ -d "demo-cicd" ]; then
+              mv demo-cicd demo-cicd_backup_$(date +%s)
+            fi
+            ls -dt demo-cicd_backup_* 2>/dev/null | tail -n +4 | xargs rm -rf
 
-  # 4. Deploy on EC2
-  - name: Deploy application
-    uses: appleboy/ssh-action@v1.0.3
-    with:
-      host: ${{ secrets.EC2_HOST }}
-      username: ubuntu
-      key: ${{ secrets.EC2_SSH_KEY }}
-      script: |
-        echo "Connected to EC2"
+            # Create new directory and extract code
+            mkdir demo-cicd
+            tar -xzf app.tar.gz -C demo-cicd
+            rm app.tar.gz
 
-        cd /home/ubuntu
+            cd demo-cicd
 
-        # Remove old backup (optional cleanup)
-        rm -rf demo-cicd_backup_*
+            # Install dependencies
+            npm ci --omit=dev
 
-        # Backup current version
-        if [ -d "demo-cicd" ]; then
-          mv demo-cicd demo-cicd_backup_$(date +%s)
-        fi
+            # Reload if running, otherwise start fresh
+            pm2 reload demo-cicd --update-env || pm2 start index.js --name demo-cicd
 
-        # Create fresh directory
-        mkdir demo-cicd
+            # Save PM2 process list
+            pm2 save
 
-        # Extract new code
-        tar -xzf app.tar.gz -C demo-cicd
-        rm app.tar.gz
-
-        cd demo-cicd
-
-        # Install dependencies
-        npm ci
-
-        # 🔥 Proper PM2 handling
-        pm2 delete demo-cicd || true
-        pm2 start index.js --name demo-cicd
-
-        # Save PM2 process list
-        pm2 save
-
-        echo "Deployment successful 🚀"
-```
+            echo "Deployment successful 🚀"
