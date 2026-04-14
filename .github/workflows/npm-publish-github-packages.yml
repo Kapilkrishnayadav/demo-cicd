@@ -8,16 +8,22 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
 
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
     steps:
       # 1. Checkout code
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      # 2. Create tar file
+      # 2. Create tar package (FIXED)
       - name: Create tar package
         run: |
-          tar --exclude='node_modules' \
-              --exclude='.git' \
-              -czf app.tar.gz .
+          tar -czf app.tar.gz \
+            --exclude='node_modules' \
+            --exclude='.git' \
+            --warning=no-file-changed \
+            .
 
       # 3. Upload to EC2
       - name: Copy to EC2
@@ -37,22 +43,31 @@ jobs:
           username: ubuntu
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
+            echo "Connected to EC2"
+
             cd /home/ubuntu
 
-            # Remove old app
-            rm -rf demo-cicd
+            # Backup old version (safer than delete)
+            if [ -d "demo-cicd" ]; then
+              mv demo-cicd demo-cicd_backup_$(date +%s)
+            fi
 
-            # Extract new app
+            # Create new app directory
             mkdir demo-cicd
+
+            # Extract new code
             tar -xzf app.tar.gz -C demo-cicd
             rm app.tar.gz
 
             cd demo-cicd
 
-            # Install dependencies
+            # Install dependencies (faster & reliable)
             npm ci
 
-            # Restart app
-            pm2 restart demo-cicd || pm2 start index.js --name demo-cicd
+            # Restart app (zero-downtime if exists)
+            pm2 reload demo-cicd || pm2 start index.js --name demo-cicd
 
+            # Save PM2 process
             pm2 save
+
+            echo "Deployment successful 🚀"
