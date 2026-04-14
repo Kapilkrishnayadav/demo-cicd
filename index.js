@@ -7,7 +7,7 @@ app.use(express.json());
 
 // A basic "Home" route
 app.get('/', (req, res) => {
-    res.send('<h1>Server is Running!</h1>');
+    res.send('<h1>Server is qwerfghj</h1>');
 });
 
 // An API route to test headers (useful for debugging Nginx)
